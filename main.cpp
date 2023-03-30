@@ -12,7 +12,7 @@ using namespace std;
 
 #define READ_END 0
 #define WRITE_END 1
-
+#define MAX_SEE_DISTANCE 3
 
 typedef struct bomber
 {
@@ -47,17 +47,185 @@ void closeOtherPipes(int pipes[][2], int n, int bomber_count)
     }
 }
 
+
+int bomberThere(vector<bomber>& bombers, coordinate check_coordinate)
+{
+    int res=0;
+    for(int i=0;i<bombers.size();i++)
+    {
+        if(bombers[i].c.x == check_coordinate.x && bombers[i].c.y == check_coordinate.y)
+        {
+            return i;
+        }
+    }
+    return res;
+}
+
+int obstacleThere(vector<obsd>*& obstacles, coordinate check_coordinate)
+{
+    int res=0;
+    for(int i=0;i<(*obstacles).size();i++)
+    {
+        if((*obstacles)[i].position.x == check_coordinate.x && (*obstacles)[i].position.y == check_coordinate.y)
+        {
+            return i;
+        }
+    }
+    return res;
+}
+
+
+vector<vector<int>> indexesOfNearObjects(vector<bomber>& bombers, vector<obsd>*& obstacles, int n, int width, int height)
+{
+    // BOMBER + OBSTACLE   
+    vector<vector<int>> res;
+    coordinate initial_coordinate = bombers[n].c;
+    for(int i=-3;i<=3;i++)
+    {
+        int offset = abs(i);
+        res.push_back(vector<int>());
+        for(int j=-3+offset;j<=3-offset;j++)
+        {
+            
+            if(i==0 && j==0) continue; //exclude self
+            if(i>width-1 || j > height-1) continue; // exclude out of borders
+            coordinate check_coordinate;
+
+            check_coordinate.x = initial_coordinate.x + j; // first check the horizontals
+            check_coordinate.y = initial_coordinate.y + i; 
+
+            int bomber_index = bomberThere(bombers, check_coordinate);
+            int obstacle_index = obstacleThere(obstacles,check_coordinate);
+            if(bomber_index)
+            {
+                res[0].push_back(bomber_index);
+            }
+            
+            else if(obstacle_index)
+            {
+                res[1].push_back(obstacle_index);
+            }
+        }
+    }
+    return res;
+}
+
+
+void serveBomberMessage(imp*& im, vector<bomber>& bombers, int n, int pipes[][2], int pid_table[]
+                        , vector<obsd>*& obstacles, int width, int height)
+{
+    switch (im->m->type)
+    {
+    case BOMBER_START:
+    {
+        om* message_out = new om;
+        omd* message_out_data = new omd;
+        omp* message_out_print = new omp;
+        message_out_data->new_position = (bombers)[n].c;
+        message_out -> data = *(message_out_data);
+        message_out ->type = BOMBER_LOCATION;
+        message_out_print->m = message_out;
+        message_out_print ->pid = pid_table[n]; 
+        send_message(pipes[n][WRITE_END], message_out);
+        print_output(NULL,message_out_print,NULL,NULL);
+        delete message_out;
+        delete message_out_data;
+        delete message_out_print;
+        break;
+    }
+    case BOMBER_MOVE:
+    {
+        break;
+    }
+    case BOMBER_PLANT:
+    {
+
+        break;
+    }
+    
+    case BOMB_EXPLODE:
+    {
+
+        break;
+    }
+
+    case BOMBER_SEE:
+    {
+        vector<vector<int>> near_objects = indexesOfNearObjects(bombers, obstacles, n, width, height);
+    
+        int object_count = near_objects[0].size() + near_objects[1].size() + near_objects[2].size(); // BOMBER + BOMB + OBSTACLE  
+        
+        od objects[object_count];  //objects in an array
+        
+        om* message_out = new om;
+        omd* message_out_data = new omd;
+        omp* message_out_print = new omp;
+        
+        int ind=0;
+        for(int i=0;i<2;i++)  // 2 types of objects --> 0 -> bomber, 1 -> obstacle
+        {
+            for(int j=0;j<near_objects[i].size();j++) 
+            {
+                od obj;
+                switch (i)
+                {
+                case 0:  //bomber
+                {
+                    obj.type = BOMBER;
+                    obj.position = bombers[near_objects[i][j]].c;
+                    break;
+                }
+                
+                case 1: //obstacle
+                {
+                    obj.type = OBSTACLE;
+                    obj.position = (*obstacles)[near_objects[i][j]].position;
+                    break;
+                }   
+                
+                default:
+                    break;
+                } 
+                objects[ind] = obj;
+                ind++;
+            }
+        }
+        
+        
+        message_out->type = BOMBER_VISION;
+        message_out_data->object_count = object_count;
+        message_out->data = *(message_out_data);
+        message_out_print->m = message_out;
+        message_out_print ->pid = pid_table[n]; 
+
+        
+
+        send_message(pipes[n][WRITE_END], message_out);
+        send_object_data(pipes[n][WRITE_END], object_count, objects);
+        print_output(NULL,message_out_print,NULL,objects);
+
+        delete message_out;
+        delete message_out_data;
+        delete message_out_print;
+        
+        
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+
 int main(int argc, char *argv[])
 {
-    vector<string> allArgs(argv, argv+argc); // first is ./bgame. Start reading from second.
-
-
+    
     int width, height, obstacle_count, bomber_count, status;
-    width = stoi(allArgs[1]); height = stoi(allArgs[2]); obstacle_count = stoi(allArgs[3]); bomber_count = stoi(allArgs[4]);
+    width = stoi(argv[1]); height = stoi(argv[2]); obstacle_count = stoi(argv[3]); bomber_count = stoi(argv[4]);
     
     vector<obsd>* obstacles = new vector<obsd>;
-    
-    
+      
     getObstacles(obstacles,obstacle_count,argv);
 
     int pipes[bomber_count][2];
@@ -135,15 +303,8 @@ int main(int argc, char *argv[])
                 //cout << inp[j] << endl;
                 
             }
-            inp[j]=NULL;
-            
-            //char* arr[] = {"ls", "-l", "-R", "-a", NULL};
-            //execv("/bin/ls", arr);
-            
-            execv(inp[0],inp);
-            
-            
-           
+            inp[j]=NULL;          
+            execv(inp[0],inp);      
         }
     }
     /*
@@ -153,7 +314,7 @@ int main(int argc, char *argv[])
     }
     */
    
-   for(int i=0; i<bomber_count;i++) // create pipes
+   for(int i=0; i<bomber_count;i++) 
     {
         
         memset(&(polls[i]), 0, sizeof(polls[i]));
@@ -161,8 +322,7 @@ int main(int argc, char *argv[])
         polls[i].events = POLLIN;
 
     }
-    
-    
+        
     while(bomber_count > 0)
     {
         for(int i=0;i<sizeof(pipes)/sizeof(pipes[1]);i++)
@@ -179,26 +339,16 @@ int main(int argc, char *argv[])
                 mp->m = m;
                 mp->pid = pid_table[i];
                 print_output(mp,NULL,NULL,NULL);
-                bomber_count--;
+                serveBomberMessage(mp,bombers,i,pipes,pid_table, obstacles, width, height);
+                delete m;
+                delete mp;
                 
-                /*
-                char buf[1024];
-                read(pipes[i][1],buf,1024);
-                cout<<buf<<endl;
-                bomber_count--;
-                */
+                
             }
 
         }
         
     }
-    
-    
-    
-    
-
-
-    
   
     for(int i=0;i<bomber_count;i++)
     {
