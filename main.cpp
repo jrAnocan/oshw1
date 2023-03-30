@@ -7,6 +7,7 @@
 #include <sys/wait.h> 
 #include <poll.h>
 #include <cstring>
+#include <sstream>
 
 using namespace std;
 
@@ -21,14 +22,14 @@ typedef struct bomber
 } bomber;
 
 
-void getObstacles(vector<obsd>*& obstacles, int obstacle_count, char* argv[])
+void getObstacles(vector<obsd>*& obstacles, int obstacle_count, vector<vector<string>>& lines)
 {
-    for(int i=0;i<obstacles->size();i++)
+    for(int i=0;i<obstacle_count;i++)
     {
         obsd o;
-        o.position.x = stoi(argv[5+3*i]);
-        o.position.y = stoi(argv[6+3*i]);
-        o.remaining_durability = stoi(argv[7+3*i]);
+        o.position.x = stoi(lines[1+i][0]);
+        o.position.y = stoi(lines[1+i][1]);
+        o.remaining_durability = stoi(lines[1+i][2]);
         obstacles->push_back(o);
     }
 
@@ -110,6 +111,22 @@ vector<vector<int>> indexesOfNearObjects(vector<bomber>& bombers, vector<obsd>*&
     return res;
 }
 
+bool newCoordinateAvailable(coordinate current, coordinate target, int width, int height)
+{
+    if(target.x >= width-1 || target.y >=height-1)
+    {
+        return false;
+    }
+    if(target.x == current.x && (abs((int) target.y - (int)current.y)==1) )
+    {
+        return true;
+    }
+    if(target.y == current.y && abs((int) target.x - (int) current.x)==1)
+    {
+        return true;
+    }
+    return false;
+}
 
 void serveBomberMessage(imp*& im, vector<bomber>& bombers, int n, int pipes[][2], int pid_table[]
                         , vector<obsd>*& obstacles, int width, int height)
@@ -135,6 +152,34 @@ void serveBomberMessage(imp*& im, vector<bomber>& bombers, int n, int pipes[][2]
     }
     case BOMBER_MOVE:
     {
+        om* message_out = new om;
+        omd* message_out_data = new omd;
+        omp* message_out_print = new omp;
+
+        coordinate current_pos, target_pos, new_pos;
+        current_pos = bombers[n].c;
+        target_pos = im->m->data.target_position;
+        if(newCoordinateAvailable( current_pos, target_pos, width, height))
+        {
+            new_pos = im->m->data.target_position;
+            bombers[n].c = new_pos;
+        }
+        else
+        {
+            new_pos = current_pos;
+        }
+        message_out_data->new_position = new_pos;
+
+        message_out -> data = *(message_out_data);
+        message_out ->type = BOMBER_LOCATION;
+        message_out_print->m = message_out;
+        message_out_print ->pid = pid_table[n]; 
+        send_message(pipes[n][WRITE_END], message_out);
+        print_output(NULL,message_out_print,NULL,NULL);
+        delete message_out;
+        delete message_out_data;
+        delete message_out_print;
+        break;
         break;
     }
     case BOMBER_PLANT:
@@ -218,15 +263,48 @@ void serveBomberMessage(imp*& im, vector<bomber>& bombers, int n, int pipes[][2]
 }
 
 
-int main(int argc, char *argv[])
+int main()
 {
+    string l;
+    vector<vector<string>> lines;
+    int line_no=0;
+    while (getline(cin, l))
+    {
+        if (l.empty()) {
+            break;
+        }
+        lines.push_back(vector<string>());
+        
+        istringstream ss(l);
+ 
+        string word; 
+        while (ss >> word)
+        {
+            // print the read word
+            lines[line_no].push_back(word);
+        }
+        line_no++;
+    }
+    /*
+    for(int i=0;i<line_no;i++)
+    {
+        for(int j=0;j<lines[i].size();j++)
+        {
+            cout<<lines[i][j]<<" ";
+        }
+        cout<<endl;
+    }
+    */
+
+
+
     
     int width, height, obstacle_count, bomber_count, status;
-    width = stoi(argv[1]); height = stoi(argv[2]); obstacle_count = stoi(argv[3]); bomber_count = stoi(argv[4]);
+    width = stoi(lines[0][0]); height = stoi(lines[0][1]); obstacle_count = stoi(lines[0][2]); bomber_count = stoi(lines[0][3]);
     
     vector<obsd>* obstacles = new vector<obsd>;
       
-    getObstacles(obstacles,obstacle_count,argv);
+    getObstacles(obstacles,obstacle_count,lines);
 
     int pipes[bomber_count][2];
     struct pollfd polls[bomber_count];
@@ -238,25 +316,15 @@ int main(int argc, char *argv[])
             
     int offset = 0;
     
-    for(int i=0; i<bomber_count ; i++)
+    for(int i=0; i<line_no-1 ; i+=2)
     {
         bomber b;
-        int ind = 5+3*obstacle_count+offset;
-        int arg_count = stoi(argv[ind+2]);
-        b.c.x = stoi(argv[ind]); b.c.y = stoi(argv[ind+1]);
-        int j;
-        for(j=0; j<arg_count; j++)
-        {
-            b.args.push_back( argv[ind+3+j] );
-        }
-        
-        b.args.push_back("\0");
-        offset += 2+arg_count+1;
+        b.c.x = stoi(lines[obstacle_count+1+i][0]); 
+        b.c.y = stoi(lines[obstacle_count+1+i][1]); 
+        b.args = lines[obstacle_count+2+i];
         bombers.push_back(b);
- 
     }
-
-   
+    
     
     for(int i=0; i<bomber_count;i++) // create pipes
     {
@@ -287,10 +355,10 @@ int main(int argc, char *argv[])
             dup2(pipes[i][READ_END],fileno(stdin));
             dup2(pipes[i][READ_END],fileno(stdout));
 
-            char* inp[bombers[i].args.size()];
+            char* inp[bombers[i].args.size()+1];
             
             int j;
-            for(j=0;j<bombers[i].args.size()-1;j++)
+            for(j=0;j<bombers[i].args.size();j++)
             {
                
                 char* c = new char[bombers[i].args[j].length() + 1];
@@ -303,16 +371,12 @@ int main(int argc, char *argv[])
                 //cout << inp[j] << endl;
                 
             }
-            inp[j]=NULL;          
+            inp[j]=NULL;  
+                   
             execv(inp[0],inp);      
         }
     }
-    /*
-    for(int i=0;i<bomber_count;i++)
-    {
-        cout<<pid_table[i]<<" ";
-    }
-    */
+    
    
    for(int i=0; i<bomber_count;i++) 
     {
@@ -342,8 +406,6 @@ int main(int argc, char *argv[])
                 serveBomberMessage(mp,bombers,i,pipes,pid_table, obstacles, width, height);
                 delete m;
                 delete mp;
-                
-                
             }
 
         }
@@ -354,7 +416,7 @@ int main(int argc, char *argv[])
     {
         waitpid(pid_table[i], &status, 0);
     }
-
+    
     return 0;
 
 }
