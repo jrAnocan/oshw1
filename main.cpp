@@ -33,16 +33,6 @@ void getObstacles(vector<obsd>*& obstacles, int obstacle_count, char* argv[])
     }
 
 }
-string bomberArguments(vector<bomber> bombers, int n)
-{
-    string res;
-    for(int i=0;i<bombers[n].args.size();i++)
-    {
-        res += bombers[n].args[i];
-        res += " ";
-    }
-    return res;
-}
 
 void closeOtherPipes(int pipes[][2], int n, int bomber_count)
 {
@@ -97,10 +87,7 @@ int main(int argc, char *argv[])
         bombers.push_back(b);
  
     }
-   
-    
 
-    //cout << bombers[1].args[3]<<endl;
    
     
     for(int i=0; i<bomber_count;i++) // create pipes
@@ -108,51 +95,55 @@ int main(int argc, char *argv[])
         PIPE(pipes[i]);
         
     }
-    
-    
-   
-   
+
     for(int i=0;i<bomber_count;i++)
     {
         int pid = fork();
         pid_table[i]=pid;
 
-        if(pid)
+        if(pid) //parent --controller
         {
-            string msg = bomberArguments(bombers, i);
             
-            write(pipes[i][WRITE_END], &(bombers[i].args), sizeof(struct bomber));
-           
+            close(pipes[i][READ_END]);
+            
+            
             
             
         }
-        else
+        else //child --bomber
         {
-            vector<string>* args;
-            dup2(pipes[i][WRITE_END],fileno(stdin));
             
+            
+            close(pipes[i][WRITE_END]);
 
-            
-            read(pipes[i][WRITE_END], args, sizeof(struct bomber));
+            dup2(pipes[i][READ_END],fileno(stdin));
             dup2(pipes[i][READ_END],fileno(stdout));
-            closeOtherPipes(pipes,i,bomber_count);
-        
 
-            char* inp[(*args).size()];
-            for(int i=0;i<(*args).size();i++)
+            char* inp[bombers[i].args.size()];
+            
+            int j;
+            for(j=0;j<bombers[i].args.size()-1;j++)
             {
-                char* c = new char[(*args)[i].length() + 1];
+               
+                char* c = new char[bombers[i].args[j].length() + 1];
 
-                // Copy contents
-                copy((*args)[i].begin(), (*args)[i].end(), c);
-                inp[i] = c;
+                
+                
+                copy(bombers[i].args[j].begin(), bombers[i].args[j].end(), c);
+                
+                inp[j] = c;
+                //cout << inp[j] << endl;
+                
             }
-            //cout<<"my pid is:"<<getpid()<<endl;
-            //execv(inp[0],inp);
-            int p = getpid();
-            cout<<p<<endl;
-            return 0;
-            //execl("/bin/ls","ls",NULL); // exec the children
+            inp[j]=NULL;
+            
+            //char* arr[] = {"ls", "-l", "-R", "-a", NULL};
+            //execv("/bin/ls", arr);
+            
+            execv(inp[0],inp);
+            
+            
+           
         }
     }
     /*
@@ -161,6 +152,7 @@ int main(int argc, char *argv[])
         cout<<pid_table[i]<<" ";
     }
     */
+   
    for(int i=0; i<bomber_count;i++) // create pipes
     {
         
@@ -169,12 +161,38 @@ int main(int argc, char *argv[])
         polls[i].events = POLLIN;
 
     }
-    char buf[1024];
-                    read(pipes[0][READ_END], buf, 1024);
-                    cout<<buf<<endl;
-                    
-                    read(pipes[1][READ_END], buf, 1024);
-                    cout<<buf<<endl;
+    
+    
+    while(bomber_count > 0)
+    {
+        for(int i=0;i<sizeof(pipes)/sizeof(pipes[1]);i++)
+        {
+            
+            
+
+            if(poll(&(polls[i]), 1, 100) > 0)
+            {
+                
+                im* m = new im;
+                imp* mp = new imp;
+                read_data(pipes[i][WRITE_END], m);
+                mp->m = m;
+                mp->pid = pid_table[i];
+                print_output(mp,NULL,NULL,NULL);
+                bomber_count--;
+                
+                /*
+                char buf[1024];
+                read(pipes[i][1],buf,1024);
+                cout<<buf<<endl;
+                bomber_count--;
+                */
+            }
+
+        }
+        
+    }
+    
     
     
     
