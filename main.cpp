@@ -21,6 +21,14 @@ typedef struct bomber
     vector<string> args;
 } bomber;
 
+typedef struct bomb
+{
+    coordinate c;
+    pid_t pid;
+    int fd[2];
+    struct pollfd poll;
+} bomb;
+
 
 void getObstacles(vector<obsd>*& obstacles, int obstacle_count, vector<vector<string>>& lines)
 {
@@ -128,7 +136,19 @@ bool newCoordinateAvailable(coordinate current, coordinate target, int width, in
     return false;
 }
 
-void serveBomberMessage(imp*& im, vector<bomber>& bombers, int n, int pipes[][2], int pid_table[]
+int bombThere(vector<bomb>& bombs, coordinate c)
+{
+    for(int i=0;i<bombs.size();i++)
+    {
+        if(bombs[i].c.x == c.x && bombs[i].c.y == c.y)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void serveBomberMessage(imp*& im, vector<bomber>& bombers, vector<bomb>& bombs, int n, int pipes[][2], int pid_table[]
                         , vector<obsd>*& obstacles, int width, int height)
 {
     switch (im->m->type)
@@ -180,17 +200,127 @@ void serveBomberMessage(imp*& im, vector<bomber>& bombers, int n, int pipes[][2]
         delete message_out_data;
         delete message_out_print;
         break;
-        break;
+        
     }
     case BOMBER_PLANT:
     {
+    
+        coordinate bomber_location ;
+        int bomber_pid = im->pid;
+        int bomber_index;
+        for(bomber_index=0;bomber_index<bombers.size();bomber_index++)
+        {
+            if(pid_table[bomber_index] == bomber_pid)
+            {
+                break;
+            }
+        }    
+                  //----------------->didnt check if pid exists in pid table. Assume it would.
+        bomber_location = bombers[bomber_index].c;
+        int is_bomb_there = bombThere(bombs, bomber_location);
+        if(!is_bomb_there) // No bomb ---> plant
+        {
+            int fd[2];
+            PIPE(fd);
+            
+            bomb b;
+            //cout<<"bomb"<<" "<<fd[READ_END]<<fd[WRITE_END]<<endl;
+            
+            b.c = bomber_location;
+            b.fd[0] = fd[0]; b.fd[1] = fd[1];
+            
+            
+            int pid = fork();
+            
+            if(pid)
+            {
+                close(fd[READ_END]);
+                //cout<<"CONTROLLER"<<fd[0]<<"--------"<<fd[1]<<endl;
+                om* message_out = new om;
+                omd* message_out_data = new omd;
+                omp* message_out_print = new omp;
 
+                
+                b.pid = pid;
+
+                struct pollfd poll;
+                memset(&poll, 0,sizeof(poll));
+                poll.fd = fd[WRITE_END];
+                poll.events = POLLIN;
+
+                bombs.push_back(b);
+                //close(bombs[bombs.size()-1].fd[READ_END]); //-------------------------------------------
+                
+                message_out_data->planted = 1;
+                message_out->data = *(message_out_data);
+                message_out->type = BOMBER_PLANT_RESULT;
+                message_out_print->m = message_out;
+                message_out_print->pid = pid_table[n];
+                send_message(pipes[n][WRITE_END], message_out);
+                print_output(NULL,message_out_print,NULL,NULL);
+                delete message_out;
+                delete message_out_data;
+                delete message_out_print;
+                
+
+            }
+            else
+            {
+                
+                //cout<<"BOMB"<<fd[0]<<"--------"<<fd[1]<<endl;
+                close(fd[WRITE_END]);
+                close(fileno(stdin)); //bomb stdin close?
+                
+                dup2(fd[READ_END],fileno(stdout));
+                const char* arg = to_string(im->m->data.bomb_info.interval).c_str();
+                execl("./bomb","./bomb",arg,NULL);
+                
+            }
+
+            
+        }
+            
+        else //Bomb ---> no plant
+        {
+            om* message_out = new om;
+            omd* message_out_data = new omd;
+            omp* message_out_print = new omp;
+            message_out_data->planted = 0;
+            message_out->data = *(message_out_data);
+            message_out->type = BOMBER_PLANT_RESULT;
+            message_out_print->m = message_out;
+            message_out_print->pid = pid_table[n];
+            send_message(pipes[n][WRITE_END], message_out);
+            print_output(NULL,message_out_print,NULL,NULL);
+            delete message_out;
+            delete message_out_data;
+            delete message_out_print;
+            
+        }
+            
+        
+        
+        
+        
+    
         break;
     }
     
     case BOMB_EXPLODE:
     {
+        /*
+        int bomb_index;
+        int status;
+        for(bomb_index=0;bomb_index<bombs.size();bomb_index++)
+        {
+            if(im->pid == bombs[bomb_index].pid)
+            {
+                break;
+            }
+        }
 
+        waitpid(bombs[bomb_index].pid,&status,0);
+        */
         break;
     }
 
@@ -262,6 +392,18 @@ void serveBomberMessage(imp*& im, vector<bomber>& bombers, int n, int pipes[][2]
     }
 }
 
+bool bombExploded(int pid, vector<int>& exploded_bomb_pids)
+{
+    for(int i=0;i<exploded_bomb_pids.size();i++)
+    {
+        if(pid == exploded_bomb_pids[i])
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 
 int main()
 {
@@ -280,24 +422,12 @@ int main()
         string word; 
         while (ss >> word)
         {
-            // print the read word
+       
             lines[line_no].push_back(word);
         }
         line_no++;
     }
-    /*
-    for(int i=0;i<line_no;i++)
-    {
-        for(int j=0;j<lines[i].size();j++)
-        {
-            cout<<lines[i][j]<<" ";
-        }
-        cout<<endl;
-    }
-    */
-
-
-
+  
     
     int width, height, obstacle_count, bomber_count, status;
     width = stoi(lines[0][0]); height = stoi(lines[0][1]); obstacle_count = stoi(lines[0][2]); bomber_count = stoi(lines[0][3]);
@@ -311,12 +441,17 @@ int main()
     
     int pid_table[bomber_count] = { };
 
+    vector<bomb> bombs;
     
+
+
     vector<bomber> bombers ;
-            
+
+
+
     int offset = 0;
     
-    for(int i=0; i<line_no-1 ; i+=2)
+    for(int i=0; i<line_no-1-obstacle_count ; i+=2)
     {
         bomber b;
         b.c.x = stoi(lines[obstacle_count+1+i][0]); 
@@ -326,14 +461,11 @@ int main()
     }
     
     
-    for(int i=0; i<bomber_count;i++) // create pipes
-    {
-        PIPE(pipes[i]);
-        
-    }
+    
 
     for(int i=0;i<bomber_count;i++)
     {
+        PIPE(pipes[i]);
         int pid = fork();
         pid_table[i]=pid;
 
@@ -351,7 +483,7 @@ int main()
             
             
             close(pipes[i][WRITE_END]);
-
+            
             dup2(pipes[i][READ_END],fileno(stdin));
             dup2(pipes[i][READ_END],fileno(stdout));
 
@@ -386,15 +518,70 @@ int main()
         polls[i].events = POLLIN;
 
     }
-        
-    while(bomber_count > 0)
+
+    vector<int> exploded_bomb_pids; 
+    while(bomber_count > 1)
     {
-        for(int i=0;i<sizeof(pipes)/sizeof(pipes[1]);i++)
+        int size=0;
+        
+        for(int i=0;i<bombs.size();i++)
         {
-            
+            if(!bombExploded(bombs[i].pid,exploded_bomb_pids))
+            {
+                size++;
+            }
             
 
-            if(poll(&(polls[i]), 1, 100) > 0)
+        }
+        struct pollfd polls_bomb[size];
+        for(int i=0;i<bombs.size();i++)
+        {
+            if(!bombExploded(bombs[i].pid,exploded_bomb_pids))
+            {
+                polls_bomb[i] = bombs[i].poll;
+               
+            }
+            
+
+        }
+        
+        poll(polls_bomb,size,0);
+
+        for(int i=0;i<bombs.size();i++)
+        {
+            
+            if(polls_bomb[i].revents & POLLIN  && !bombExploded(bombs[i].pid,exploded_bomb_pids))
+            {
+                
+                exploded_bomb_pids.push_back(bombs[i].pid);
+            
+                im* m = new im;
+                imp* mp = new imp;
+                read_data(bombs[i].fd[WRITE_END], m);
+                close(bombs[i].fd[WRITE_END]);
+
+                mp->m = m;
+                mp->pid = bombs[i].pid;
+                
+                print_output(mp,NULL,NULL,NULL);
+                
+                serveBomberMessage(mp,bombers,bombs,i,pipes, pid_table, obstacles, width, height);
+                delete m;
+                delete mp;
+                waitpid(bombs[i].pid,&status,0);
+
+            }
+            
+        }
+        
+        
+
+        poll(polls,bomber_count,0);
+        for(int i=0;i<sizeof(pipes)/sizeof(pipes[0]);i++)
+        {
+            
+
+            if(polls[i].revents & POLLIN )
             {
                 
                 im* m = new im;
@@ -403,13 +590,14 @@ int main()
                 mp->m = m;
                 mp->pid = pid_table[i];
                 print_output(mp,NULL,NULL,NULL);
-                serveBomberMessage(mp,bombers,i,pipes,pid_table, obstacles, width, height);
+                serveBomberMessage(mp,bombers,bombs,i,pipes, pid_table, obstacles, width, height);
+                
                 delete m;
                 delete mp;
             }
 
         }
-        
+        sleep(0.001);  
     }
   
     for(int i=0;i<bomber_count;i++)
