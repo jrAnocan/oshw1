@@ -33,6 +33,7 @@ typedef struct bomb
 } bomb;
 
 int bomber_count;
+bool winner_informed=false;
 
 void getObstacles(vector<obsd>*& obstacles, int obstacle_count, vector<vector<string>>& lines)
 {
@@ -314,6 +315,7 @@ void decreaseDurabilityOfObstacles(vector<obsd>*& obstacles, coordinate c, int r
 
 void informMarkedBomber(vector<bomber>& bombers, int pipes[][2], int pid_table[], int n )
 {
+    int status;
     om* message_out = new om;
     
     omp* message_out_print = new omp;
@@ -326,11 +328,40 @@ void informMarkedBomber(vector<bomber>& bombers, int pipes[][2], int pid_table[]
     print_output(NULL,message_out_print,NULL,NULL);
                         
     close(pipes[n][WRITE_END]);
-    bomber_count--;
+    
     delete message_out;   
     delete message_out_print;
+    bombers[n].die_message_recieved=true;
+    bomber_count--;
+    waitpid(pid_table[n],&status,0);
+
+    
 
 }
+
+void informWinnerBomber(vector<bomber>& bombers, int pipes[][2], int pid_table[], int n)
+{
+    int status;
+    om* message_out = new om;
+    
+    omp* message_out_print = new omp;
+    message_out->type = BOMBER_WIN;
+    
+    message_out_print->pid = pid_table[n];
+    message_out_print->m = message_out;
+
+    send_message(pipes[n][WRITE_END], message_out);
+    print_output(NULL,message_out_print,NULL,NULL);
+                        
+    close(pipes[n][WRITE_END]);
+    
+    delete message_out;   
+    delete message_out_print;
+    winner_informed = true;
+    waitpid(pid_table[n],&status,0);
+
+}
+
 void serveBomberMessage(imp*& im, vector<bomber>& bombers, vector<bomb>& bombs, int n, int pipes[][2], int pid_table[]
                         , vector<obsd>*& obstacles, int width, int height)
 {
@@ -338,6 +369,13 @@ void serveBomberMessage(imp*& im, vector<bomber>& bombers, vector<bomb>& bombs, 
     {
     case BOMBER_START:
     {
+        if(bomber_count == 1)
+        {
+            
+            informWinnerBomber(bombers, pipes, pid_table, n);
+            return;
+        }
+
         om* message_out = new om;
         omd* message_out_data = new omd;
         omp* message_out_print = new omp;
@@ -360,7 +398,11 @@ void serveBomberMessage(imp*& im, vector<bomber>& bombers, vector<bomb>& bombs, 
            informMarkedBomber(bombers, pipes, pid_table, n);
            return;
         }
-
+        if(bomber_count == 1)
+        {
+            informWinnerBomber(bombers, pipes, pid_table, n);
+            return;
+        }
         om* message_out = new om;
         omd* message_out_data = new omd;
         omp* message_out_print = new omp;
@@ -398,7 +440,11 @@ void serveBomberMessage(imp*& im, vector<bomber>& bombers, vector<bomb>& bombs, 
            informMarkedBomber(bombers, pipes, pid_table, n);
            return;
         }
-
+        if(bomber_count == 1)
+        {
+            informWinnerBomber(bombers, pipes, pid_table, n);
+            return;
+        }
         coordinate bomber_location ;
         int bomber_pid = im->pid;
         int bomber_index;
@@ -530,8 +576,11 @@ void serveBomberMessage(imp*& im, vector<bomber>& bombers, vector<bomb>& bombs, 
            return;
         }
 
-        
-
+        if(bomber_count == 1)
+        {
+            informWinnerBomber(bombers, pipes, pid_table, n);
+            return;
+        }
 
         vector<vector<int>> near_objects = indexesOfNearObjects(bombers, bombs, obstacles, n, width, height);
     
@@ -665,12 +714,15 @@ int main()
         bombers.push_back(b);
     }
     
-    
+    for(int i=0;i<bomber_count;i++)
+    {
+        PIPE(pipes[i]);
+
+    }
     
 
     for(int i=0;i<bomber_count;i++)
     {
-        PIPE(pipes[i]);
         int pid = fork();
         pid_table[i]=pid;
 
@@ -707,7 +759,7 @@ int main()
         }
     }
     
-    while(bomber_count > 1)
+    while(bomber_count > 1 || !winner_informed)
     {
         
         int size = bombs.size();
@@ -738,7 +790,7 @@ int main()
                     print_output(mp,NULL,NULL,NULL);
                     
                     serveBomberMessage(mp,bombers,bombs,i,pipes, pid_table, obstacles, width, height);
-                    bomb_polls[i].revents = 0;
+                    
                     delete m;
                     delete mp;
 
@@ -755,13 +807,13 @@ int main()
 
         int ret_bomber = poll(polls,bomber_count,0);
         
-        if(ret_bomber) // &&!ret_bomb
+        if(ret_bomber ) // && 
         {
             for(int i=0;i<sizeof(pipes)/sizeof(pipes[0]);i++)
             {
                 
 
-                if(polls[i].revents & POLLIN )
+                if(polls[i].revents & POLLIN  && !winner_informed)
                 {
                     
 
@@ -785,18 +837,26 @@ int main()
         
         sleep(0.001);  
     }
-    
+
+    cout<<"winner informed?: "<<winner_informed<<endl;
+
+
     for(int i=0;i<bombers.size();i++)
     {
-        
-        
-            close(pipes[i][WRITE_END]);
+
+        close(pipes[i][WRITE_END]);
         
     }
     for(int i=0;i<bombs.size();i++)
     {
         close(bombs[i].fd[WRITE_END]);
     }
+
+    for(int i=0;i<bombs.size();i++)
+    {
+        waitpid(bombs[i].pid, &status,0);
+    }
+
     for(int i=0;i<bomber_count;i++)
     {
         if(bombers[i].die_message_recieved)
