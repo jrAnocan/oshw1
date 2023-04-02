@@ -764,7 +764,7 @@ int main()
         }
     }
     
-    while(bomber_count > 1 )
+    while(bomber_count > 1)
     {
         
         int size = bombs.size();
@@ -775,12 +775,12 @@ int main()
         }
 
         int ret_bomb = poll(bomb_polls,size,0);
-        
+        int bomb_poll_index=0;
         
         
             for(int i=0;i<size;i++)
             {
-                if(bomb_polls[i].revents & POLLIN )
+                if(bomb_polls[bomb_poll_index].revents & POLLIN )
                 {
                     im* m = new im;
                     imp* mp = new imp;
@@ -802,6 +802,7 @@ int main()
 
                     bombs.erase(bombs.begin() + i);
                     i--; size--; 
+                    bomb_poll_index++;
                 }
             }
         
