@@ -19,9 +19,9 @@ typedef struct bomber
 {
     coordinate c;
     vector<string> args;
-    bool marked;
-    bool die_message_recieved;
-    bool ready;
+    bool marked=false;
+    bool die_message_recieved=false;
+    bool ready=false;
 } bomber;
 
 typedef struct bomb
@@ -31,11 +31,13 @@ typedef struct bomb
     int fd[2];
     struct pollfd poll;
     int radius;
-    bool ready;
+    bool ready = false;
 } bomb;
 
 int bomber_count;
 bool winner_informed = false;
+int reaped_bombers=0;
+
 
 void getObstacles(vector<obsd> *&obstacles, int obstacle_count, vector<vector<string>> &lines)
 {
@@ -334,6 +336,7 @@ void informMarkedBomber(vector<bomber> &bombers, int pipes[][2], int pid_table[]
     bombers[n].die_message_recieved = true;
 
     waitpid(pid_table[n], &status, 0);
+    reaped_bombers++;
 }
 
 void informWinnerBomber(vector<bomber> &bombers, int pipes[][2], int pid_table[], int n)
@@ -356,6 +359,8 @@ void informWinnerBomber(vector<bomber> &bombers, int pipes[][2], int pid_table[]
     delete message_out_print;
     winner_informed = true;
     waitpid(pid_table[n], &status, 0);
+    reaped_bombers++;
+
 }
 
 void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, int n, int pipes[][2], int pid_table[], vector<obsd> *&obstacles, int width, int height)
@@ -756,50 +761,50 @@ int main()
         }
     }
 
-    while (bomber_count > 1 )
+    while (bomber_count > 1)
     {
-
-        int size = bombs.size();
-        struct pollfd bomb_polls[size];
-        for (int i = 0; i < size; i++)
+        for(int i=0;i<bombs.size();i++)
         {
-            bomb_polls[i] = bombs[i].poll;
-        }
-
-        int ret_bomb = poll(bomb_polls, size, 0);
-        int bomb_poll_index = 0;
-        if(ret_bomb)
-        {
-            for (int i = 0; i < size; i++)
+            if(poll(&bombs[i].poll,1,0))
             {
-                if (bomb_polls[bomb_poll_index].revents & POLLIN )
-                {
-                    
-                    im *m = new im;
-                    imp *mp = new imp;
-                    read_data(bombs[i].fd[WRITE_END], m);
-
-
-                    mp->m = m;
-                    mp->pid = bombs[i].pid;
-
-                    print_output(mp, NULL, NULL, NULL);
-                    close(bombs[i].fd[WRITE_END]);
-
-                    if (bomber_count > 1)
-                        serveBomberMessage(mp, bombers, bombs, i, pipes, pid_table, obstacles, width, height);
-
-                    delete m;
-                    delete mp;
-
-                    bombs.erase(bombs.begin() + i);
-                    i--;
-                    size--;
-                    bomb_poll_index++;
-                }
+                bombs[i].ready = true;
             }
         }
-        
+
+        int size = bombs.size();
+        for (int i = 0; i < size; i++)
+        {
+            if (bombs[i].ready)
+            {
+                im *m = new im;
+                imp *mp = new imp;
+                read_data(bombs[i].fd[WRITE_END], m);
+
+                close(bombs[i].fd[WRITE_END]);
+
+                mp->m = m;
+                mp->pid = bombs[i].pid;
+
+                print_output(mp, NULL, NULL, NULL);
+
+                if (bomber_count > 1)
+                    serveBomberMessage(mp, bombers, bombs, i, pipes, pid_table, obstacles, width, height);
+                else
+                    decreaseDurabilityOfObstacles(obstacles, bombs[i].c, bombs[i].radius);
+                    
+                delete m;
+                delete mp;
+
+                bombs.erase(bombs.begin() + i);
+                i--;
+                size--;
+            }
+        }
+
+        if(bomber_count<=1)
+        {
+            break;
+        }
 
         int ret_bomber = poll(polls, sizeof(pipes)/sizeof(pipes[0]), 0);
         
@@ -808,7 +813,7 @@ int main()
             for (int i = 0; i < sizeof(pipes) / sizeof(pipes[0]); i++)
             {
 
-                if (polls[i].revents & POLLIN )
+                if (polls[i].revents & POLLIN && !bombers[i].die_message_recieved)
                 {
 
                     im *m = new im;
@@ -825,61 +830,86 @@ int main()
                 }
             }
         }
-        
+
 
         sleep(0.001);
     }
 
     // handleBombs(obstacles, bombs, bombers, pipes, pid_table, width, height);
-    
-    
-    int in=0;
+
+    int in = 0;
     int bomber_left = bomber_count;
-    
-    while(!winner_informed)
+
+    while (reaped_bombers<bombers.size())
     {
-        for (int i = 0; i < bombers.size(); i++)
+        int ret_bomber = poll(polls, sizeof(pipes)/sizeof(pipes[0]), 0);
+        if(ret_bomber)
         {
-            
-                    
+            for (int i = 0; i < sizeof(pipes) / sizeof(pipes[0]); i++)
+            {
+
+                if (polls[i].revents & POLLIN && !bombers[i].die_message_recieved)
+                {
+
                     im *m = new im;
                     imp *mp = new imp;
+                    read_data(pipes[i][WRITE_END], m);
                     mp->m = m;
                     mp->pid = pid_table[i];
 
-                    read_data(pipes[i][WRITE_END], m);
                     print_output(mp, NULL, NULL, NULL);
                     serveBomberMessage(mp, bombers, bombs, i, pipes, pid_table, obstacles, width, height);
 
-                    
-            
+                    delete m;
+                    delete mp;
+                }
+            }
         }
     }
-
 
     while (bombs.size() > 0)
     {
-        
-        for (int i = 0; i < bombs.size(); i++)
+
+        for(int i=0;i<bombs.size();i++)
         {
-            if (poll(&bombs[i].poll, 1, 0))
+            if(poll(&bombs[i].poll,1,0))
             {
-                
+                bombs[i].ready = true;
+            }
+        }
+
+        int size = bombs.size();
+        for (int i = 0; i < size; i++)
+        {
+            if (bombs[i].ready)
+            {
                 im *m = new im;
                 imp *mp = new imp;
+                read_data(bombs[i].fd[WRITE_END], m);
+
+                close(bombs[i].fd[WRITE_END]);
+
                 mp->m = m;
                 mp->pid = bombs[i].pid;
 
-                read_data(bombs[i].fd[WRITE_END], m);
                 print_output(mp, NULL, NULL, NULL);
-                waitpid(bombs[i].pid, &status, 0);
+
+                if (bomber_count > 1)
+                    serveBomberMessage(mp, bombers, bombs, i, pipes, pid_table, obstacles, width, height);
+                else
+                    decreaseDurabilityOfObstacles(obstacles, bombs[i].c, bombs[i].radius);
+
+
+                delete m;
+                delete mp;
+
                 bombs.erase(bombs.begin() + i);
                 i--;
+                size--;
             }
         }
-        
     }
-    
+
     for (int i = 0; i < bombs.size(); i++)
     {
         close(bombs[i].fd[WRITE_END]);
