@@ -442,7 +442,7 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
         message_out->data = *(message_out_data);
         message_out->type = BOMBER_LOCATION;
         message_out_print->m = message_out;
-        message_out_print->pid = pid_table[n];
+        message_out_print->pid = im->pid;
         send_message(pipes[n][WRITE_END], message_out);
         print_output(NULL, message_out_print, NULL, NULL);
         delete message_out;
@@ -484,7 +484,7 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
         message_out->data = *(message_out_data);
         message_out->type = BOMBER_LOCATION;
         message_out_print->m = message_out;
-        message_out_print->pid = pid_table[n];
+        message_out_print->pid = im->pid;
         send_message(pipes[n][WRITE_END], message_out);
         print_output(NULL, message_out_print, NULL, NULL);
         delete message_out;
@@ -550,7 +550,7 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
                 message_out->data = *(message_out_data);
                 message_out->type = BOMBER_PLANT_RESULT;
                 message_out_print->m = message_out;
-                message_out_print->pid = pid_table[n];
+                message_out_print->pid = im->pid;
                 send_message(pipes[n][WRITE_END], message_out);
                 print_output(NULL, message_out_print, NULL, NULL);
 
@@ -584,7 +584,7 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
             message_out->data = *(message_out_data);
             message_out->type = BOMBER_PLANT_RESULT;
             message_out_print->m = message_out;
-            message_out_print->pid = pid_table[n];
+            message_out_print->pid = im->pid;
             send_message(pipes[n][WRITE_END], message_out);
             print_output(NULL, message_out_print, NULL, NULL);
             delete message_out;
@@ -708,8 +708,9 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
         message_out_data->object_count = object_count;
         message_out->data = *(message_out_data);
         message_out_print->m = message_out;
-        message_out_print->pid = pid_table[n];
-
+        message_out_print->pid = im->pid;
+        //cout<<"n is: "<<n<<endl;
+        //cout << "pid table entry is: "<<pid_table[n]<<endl;
         send_message(pipes[n][WRITE_END], message_out);
         send_object_data(pipes[n][WRITE_END], object_count, objects);
         print_output(NULL, message_out_print, NULL, objects);
@@ -822,6 +823,13 @@ int main()
         }
     }
 
+    /*
+    for(int i=0;i<bomber_count;i++)
+    {
+        cout<<"pid_table: "<<i<<" has id: "<<pid_table[i]<<endl;
+    }
+    */
+
     while (bomber_count > 1)
     {
         for (int i = 0; i < bombs.size(); i++)
@@ -855,7 +863,7 @@ int main()
 
                 delete m;
                 delete mp;
-
+                waitpid(bombs[i].pid, &status, 0);
                 bombs.erase(bombs.begin() + i);
                 i--;
                 size--;
@@ -961,6 +969,8 @@ int main()
 
                 delete m;
                 delete mp;
+                
+                waitpid(bombs[i].pid, &status, 0);
 
                 bombs.erase(bombs.begin() + i);
                 i--;
