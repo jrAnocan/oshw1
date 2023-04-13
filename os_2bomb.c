@@ -20,9 +20,9 @@ typedef struct bomber
 {
     coordinate c;
     vector<string> args;
-    bool marked=false;
-    bool die_message_recieved=false;
-    bool ready=false;
+    bool marked = false;
+    bool die_message_recieved = false;
+    bool ready = false;
     double last_distance = -1;
     bool win = false;
 } bomber;
@@ -39,8 +39,7 @@ typedef struct bomb
 
 int bomber_count;
 bool winner_informed = false;
-int reaped_bombers=0;
-
+int reaped_bombers = 0;
 
 void getObstacles(vector<obsd> *&obstacles, int obstacle_count, vector<vector<string>> &lines)
 {
@@ -107,6 +106,92 @@ int obstacleThere(vector<obsd> *&obstacles, coordinate check_coordinate)
     return res;
 }
 
+void checkDirection(vector<obsd>*& obstacles, vector<bomb>& bombs, vector<bomber>& bombers, vector<vector<int>>& res, coordinate initial_coordinate, bool dir_left, bool dir_right, bool dir_up, bool dir_down
+                   , int width, int height)
+{
+    int initial = 1;
+
+    if (dir_down || dir_left)
+    {
+        initial = -1;
+    }
+    
+
+    coordinate check_coordinate;
+    check_coordinate.x = initial_coordinate.x; // first check the horizontals
+    check_coordinate.y = initial_coordinate.y;
+
+    if(!(dir_left || dir_right || dir_up || dir_down)) //check self -- only for bomb
+    {
+        int bomb_index = bombThere(bombs, check_coordinate);
+        if ((bomb_index >= 0))
+        {
+            res[1].push_back(bomb_index);
+            
+        }
+        return;
+    }
+
+
+    for (int i = initial; i*initial <= 3 * initial*initial; i+=initial)
+    {
+
+        
+
+        if (dir_right || dir_left)
+        {
+            check_coordinate.x = initial_coordinate.x + i; // first check the horizontals
+            
+            if(check_coordinate.x<0 || check_coordinate.x >= width)
+            {
+                break;
+            }
+
+        }
+        else if (dir_up || dir_down)
+        {
+            
+            check_coordinate.y = initial_coordinate.y + i;
+            if(check_coordinate.y<0 || check_coordinate.y >= height)
+            {
+                break;
+            }
+    
+        }
+        
+        int bomber_index = bomberThere(bombers, check_coordinate);
+        int bomb_index = bombThere(bombs, check_coordinate);
+        int obstacle_index = obstacleThere(obstacles, check_coordinate);
+        if ((bomber_index >= 0))
+        {
+            res[0].push_back(bomber_index);
+        }
+
+        if ((bomb_index >= 0))
+        {
+            res[1].push_back(bomb_index);
+            
+        }
+        /*
+            cout<<"current coordinate: "<<check_coordinate.x<<","<<check_coordinate.y<<endl;
+            for(int i=0;i<bombs.size();i++)
+            {
+                
+                cout<<"bomb "<<i<<" "<<bombs[i].c.x<<","<<bombs[i].c.y<<endl;
+
+            }
+        
+        */
+        if ((obstacle_index >= 0))
+        {
+            res[2].push_back(obstacle_index);
+            break;
+        }
+
+        
+    }
+}
+
 vector<vector<int>> indexesOfNearObjects(vector<bomber> &bombers, vector<bomb> &bombs, vector<obsd> *&obstacles, int n, int width, int height)
 {
     // BOMBER + BOMB + OBSTACLE
@@ -118,55 +203,13 @@ vector<vector<int>> indexesOfNearObjects(vector<bomber> &bombers, vector<bomb> &
     }
 
     coordinate initial_coordinate = bombers[n].c;
-    /*
-    for(int i=0;i<bombs.size();i++)
-    {
-        cout<<"current coordinate: "<<initial_coordinate.x<<","<<initial_coordinate.y<<endl;
-        cout<<"bomb "<<i<<" "<<bombs[i].c.x<<","<<bombs[i].c.y<<endl;
-    }
-    */
+    checkDirection(obstacles, bombs, bombers, res, initial_coordinate, false, false, false, false, width, height);  // self
+    checkDirection(obstacles, bombs, bombers, res, initial_coordinate, true, false, false, false, width, height);  // left
+    checkDirection(obstacles, bombs, bombers, res, initial_coordinate, false, true, false, false, width, height);  // right
+    checkDirection(obstacles, bombs, bombers, res, initial_coordinate, false, false, true, false, width, height);  // up
+    checkDirection(obstacles, bombs, bombers, res, initial_coordinate, false, false, false, true, width, height);  // down
 
-    for (int i = -3; i <= 3; i++)
-    {
-        int offset = abs(i);
 
-        for (int j = -3 + offset; j <= 3 - offset; j++)
-        {
-
-            coordinate check_coordinate;
-
-            check_coordinate.x = initial_coordinate.x + j; // first check the horizontals
-            check_coordinate.y = initial_coordinate.y + i;
-
-            int bomber_index = bomberThere(bombers, check_coordinate);
-            int bomb_index = bombThere(bombs, check_coordinate);
-            int obstacle_index = obstacleThere(obstacles, check_coordinate);
-            if ((bomber_index >= 0) && i != 0 && j != 0)
-            {
-                res[0].push_back(bomber_index);
-            }
-
-            if ((bomb_index >= 0))
-            {
-                res[1].push_back(bomb_index);
-            }
-            /*
-            if(i==0 && j==0)
-            {
-                for(int i=0;i<bombs.size();i++)
-                {
-                    cout<<"current coordinate: "<<check_coordinate.x<<","<<check_coordinate.y<<endl;
-                    cout<<"bomb "<<i<<" "<<bombs[i].c.x<<","<<bombs[i].c.y<<endl;
-
-                }
-            }
-            */
-            if ((obstacle_index >= 0))
-            {
-                res[2].push_back(obstacle_index);
-            }
-        }
-    }
     return res;
 }
 
@@ -318,21 +361,18 @@ void decreaseDurabilityOfObstacles(vector<obsd> *&obstacles, coordinate c, int r
             {
                 (*obstacles)[i].remaining_durability--;
                 damaged_obstacles.push_back((*obstacles)[i]);
-                
             }
         }
     }
-    if(damaged_obstacles.size() > 0)
+    if (damaged_obstacles.size() > 0)
     {
         obsd print_obs[damaged_obstacles.size()];
-        for(int i=0;i<damaged_obstacles.size();i++)
+        for (int i = 0; i < damaged_obstacles.size(); i++)
         {
             print_obs[i] = damaged_obstacles[i];
         }
-        print_output(NULL,NULL,print_obs,NULL);
+        print_output(NULL, NULL, print_obs, NULL);
     }
-    
-    
 }
 
 void informMarkedBomber(vector<bomber> &bombers, int pipes[][2], int pid_table[], int n)
@@ -380,7 +420,6 @@ void informWinnerBomber(vector<bomber> &bombers, int pipes[][2], int pid_table[]
     winner_informed = true;
     waitpid(pid_table[n], &status, 0);
     reaped_bombers++;
-
 }
 
 void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, int n, int pipes[][2], int pid_table[], vector<obsd> *&obstacles, int width, int height)
@@ -403,7 +442,7 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
         message_out->data = *(message_out_data);
         message_out->type = BOMBER_LOCATION;
         message_out_print->m = message_out;
-        message_out_print->pid = pid_table[n];
+        message_out_print->pid = im->pid;
         send_message(pipes[n][WRITE_END], message_out);
         print_output(NULL, message_out_print, NULL, NULL);
         delete message_out;
@@ -423,7 +462,7 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
             informWinnerBomber(bombers, pipes, pid_table, n);
             return;
         }
-        
+
         om *message_out = new om;
         omd *message_out_data = new omd;
         omp *message_out_print = new omp;
@@ -445,7 +484,7 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
         message_out->data = *(message_out_data);
         message_out->type = BOMBER_LOCATION;
         message_out_print->m = message_out;
-        message_out_print->pid = pid_table[n];
+        message_out_print->pid = im->pid;
         send_message(pipes[n][WRITE_END], message_out);
         print_output(NULL, message_out_print, NULL, NULL);
         delete message_out;
@@ -511,7 +550,7 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
                 message_out->data = *(message_out_data);
                 message_out->type = BOMBER_PLANT_RESULT;
                 message_out_print->m = message_out;
-                message_out_print->pid = pid_table[n];
+                message_out_print->pid = im->pid;
                 send_message(pipes[n][WRITE_END], message_out);
                 print_output(NULL, message_out_print, NULL, NULL);
 
@@ -545,7 +584,7 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
             message_out->data = *(message_out_data);
             message_out->type = BOMBER_PLANT_RESULT;
             message_out_print->m = message_out;
-            message_out_print->pid = pid_table[n];
+            message_out_print->pid = im->pid;
             send_message(pipes[n][WRITE_END], message_out);
             print_output(NULL, message_out_print, NULL, NULL);
             delete message_out;
@@ -564,12 +603,11 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
             if (!bombers[bomber_index].marked && !bombers[bomber_index].win && caughtInExplosion(obstacles, bombers[bomber_index].c, bombs[n].c, bombs[n].radius, BOMBER))
             {
                 bombers[bomber_index].marked = true;
-                bombers[bomber_index].last_distance = sqrt(pow(bombers[bomber_index].c.x-bombs[n].c.x,2)+pow(bombers[bomber_index].c.y-bombs[n].c.y,2));
+                bombers[bomber_index].last_distance = sqrt(pow(bombers[bomber_index].c.x - bombs[n].c.x, 2) + pow(bombers[bomber_index].c.y - bombs[n].c.y, 2));
             }
         }
 
-
-        if(bomber_count == 1)
+        if (bomber_count == 1)
         {
             for (int bomber_index = 0; bomber_index < bombers.size(); bomber_index++)
             {
@@ -581,21 +619,20 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
             }
         }
 
-
-        if(bomber_count == 0)
+        if (bomber_count == 0)
         {
             int highest_index = -1;
-            double highest_distance = -1; 
+            double highest_distance = -1;
             for (int bomber_index = 0; bomber_index < bombers.size(); bomber_index++)
             {
                 if (!bombers[bomber_index].die_message_recieved)
                 {
-                    
-                    if(bombers[bomber_index].last_distance > highest_distance)        //>= necessary? i think not.
+
+                    if (bombers[bomber_index].last_distance > highest_distance) //>= necessary? i think not.
                     {
                         highest_distance = bombers[bomber_index].last_distance;
-                        highest_index = bomber_index; 
-                    } 
+                        highest_index = bomber_index;
+                    }
                 }
             }
             bombers[highest_index].marked = false;
@@ -622,7 +659,7 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
 
         vector<vector<int>> near_objects = indexesOfNearObjects(bombers, bombs, obstacles, n, width, height);
 
-        int object_count = near_objects[0].size() + near_objects[1].size() /*+ near_objects[2].size()*/; // BOMBER + BOMB + OBSTACLE
+        int object_count = near_objects[0].size() + near_objects[1].size() + near_objects[2].size(); // BOMBER + BOMB + OBSTACLE
         od objects[object_count];                                                                        // objects in an array
 
         om *message_out = new om;
@@ -651,14 +688,14 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
                     obj.position = bombs[near_objects[i][j]].c;
                     break;
                 }
-                /*
+                
                 case 2: // obstacle
                 {
                     obj.type = OBSTACLE;
                     obj.position = (*obstacles)[near_objects[i][j]].position;
                     break;
                 }
-                */
+                
                 default:
                     break;
                 }
@@ -671,8 +708,9 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
         message_out_data->object_count = object_count;
         message_out->data = *(message_out_data);
         message_out_print->m = message_out;
-        message_out_print->pid = pid_table[n];
-
+        message_out_print->pid = im->pid;
+        //cout<<"n is: "<<n<<endl;
+        //cout << "pid table entry is: "<<pid_table[n]<<endl;
         send_message(pipes[n][WRITE_END], message_out);
         send_object_data(pipes[n][WRITE_END], object_count, objects);
         print_output(NULL, message_out_print, NULL, objects);
@@ -688,8 +726,6 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
         break;
     }
 }
-
-
 
 int main()
 {
@@ -787,11 +823,18 @@ int main()
         }
     }
 
+    /*
+    for(int i=0;i<bomber_count;i++)
+    {
+        cout<<"pid_table: "<<i<<" has id: "<<pid_table[i]<<endl;
+    }
+    */
+
     while (bomber_count > 1)
     {
-        for(int i=0;i<bombs.size();i++)
+        for (int i = 0; i < bombs.size(); i++)
         {
-            if(poll(&bombs[i].poll,1,0))
+            if (poll(&bombs[i].poll, 1, 0))
             {
                 bombs[i].ready = true;
             }
@@ -817,24 +860,24 @@ int main()
                     serveBomberMessage(mp, bombers, bombs, i, pipes, pid_table, obstacles, width, height);
                 else
                     decreaseDurabilityOfObstacles(obstacles, bombs[i].c, bombs[i].radius);
-                    
+
                 delete m;
                 delete mp;
-
+                waitpid(bombs[i].pid, &status, 0);
                 bombs.erase(bombs.begin() + i);
                 i--;
                 size--;
             }
         }
 
-        if(bomber_count<=1)
+        if (bomber_count <= 1)
         {
             break;
         }
 
-        int ret_bomber = poll(polls, sizeof(pipes)/sizeof(pipes[0]), 0);
-        
-        if(ret_bomber)
+        int ret_bomber = poll(polls, sizeof(pipes) / sizeof(pipes[0]), 0);
+
+        if (ret_bomber)
         {
             for (int i = 0; i < sizeof(pipes) / sizeof(pipes[0]); i++)
             {
@@ -857,7 +900,6 @@ int main()
             }
         }
 
-
         sleep(0.001);
     }
 
@@ -866,10 +908,10 @@ int main()
     int in = 0;
     int bomber_left = bomber_count;
 
-    while (reaped_bombers<bombers.size())
+    while (reaped_bombers < bombers.size())
     {
-        int ret_bomber = poll(polls, sizeof(pipes)/sizeof(pipes[0]), 0);
-        if(ret_bomber)
+        int ret_bomber = poll(polls, sizeof(pipes) / sizeof(pipes[0]), 0);
+        if (ret_bomber)
         {
             for (int i = 0; i < sizeof(pipes) / sizeof(pipes[0]); i++)
             {
@@ -896,9 +938,9 @@ int main()
     while (bombs.size() > 0)
     {
 
-        for(int i=0;i<bombs.size();i++)
+        for (int i = 0; i < bombs.size(); i++)
         {
-            if(poll(&bombs[i].poll,1,0))
+            if (poll(&bombs[i].poll, 1, 0))
             {
                 bombs[i].ready = true;
             }
@@ -925,9 +967,10 @@ int main()
                 else
                     decreaseDurabilityOfObstacles(obstacles, bombs[i].c, bombs[i].radius);
 
-
                 delete m;
                 delete mp;
+                
+                waitpid(bombs[i].pid, &status, 0);
 
                 bombs.erase(bombs.begin() + i);
                 i--;
