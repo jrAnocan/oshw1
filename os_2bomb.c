@@ -369,9 +369,9 @@ void decreaseDurabilityOfObstacles(vector<obsd> *&obstacles, coordinate c, int r
         obsd print_obs[damaged_obstacles.size()];
         for (int i = 0; i < damaged_obstacles.size(); i++)
         {
-            print_obs[i] = damaged_obstacles[i];
+            print_output(NULL, NULL, &(damaged_obstacles[i]), NULL);
         }
-        print_output(NULL, NULL, print_obs, NULL);
+        
     }
 }
 
@@ -470,7 +470,7 @@ void serveBomberMessage(imp *&im, vector<bomber> &bombers, vector<bomb> &bombs, 
         coordinate current_pos, target_pos, new_pos;
         current_pos = bombers[n].c;
         target_pos = im->m->data.target_position;
-        if (newCoordinateAvailable(current_pos, target_pos, width, height))
+        if (newCoordinateAvailable(current_pos, target_pos, width, height)  && (bomberThere(bombers, target_pos)==-1) && (obstacleThere(obstacles, target_pos)==-1) )
         {
             new_pos = im->m->data.target_position;
             bombers[n].c = new_pos;
